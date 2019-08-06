@@ -1,0 +1,11 @@
+// This is a comment!
+
+h1 This is a carousel!
+section#carousel
+	.track
+		% loop Content.Slides
+			.slide
+				.image[style=background-image: url({$Image.URL})]
+				h3 $Title
+	button.prev 👈
+	button.next 👉

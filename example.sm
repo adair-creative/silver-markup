@@ -7,5 +7,5 @@ section#carousel
 			.slide
 				.image[style=background-image: url({$Image.URL})]
 				h3 $Title
-	button.prev 👈
-	button.next 👉
+	button.prev.arrow 👈
+	button.next.arrow 👉

@@ -1,112 +1,98 @@
 class HTMLElement {
-// 	toString() {
-// 		return `
-// <${this.tag}${this.id ? ` id=${this.id}` : ""}${this.class ? ` class="${this.class}"` : ""} ${this.attributes.map(attr => `${attr[0]}="${attr[1]}"`).join(" ")}>
-// 	${this.content}
-// 	${this.children.map(child => child.toString()).join("\n")}
-// </${this.tag}>`
-// 	}
-
 	/**
-	 * @param {string} lexicalLine
-	 * @param {number} indent 
+	 * @param {string} lexicalLine 
 	 */
-	constructor(lexicalLine, indent) {
-		let inAttribute = false;
-		let inContent = false;
+	constructor(lexicalLine) {
+		const tagRegex = /^([\w\-$]+{[\w\-$.]+}[\w\-$]+|[\w\-$]+)/;
+		const idRegex = /(#[\w\-{}]+\$[\w\-.#{}]+|#[\w\-{}]+)/g;
+		const attrRegex = /(\[[\w\-$."']+=.+?(?=\])\])/g;
+		const classRegex = /(\.[\w\-{}]+\$[\w\-.{}]+|\.[\w\-{}]+)/g;
+
 		let selector = "";
-		let content = "";
+		let inAttr = false;
+		let inContent = false;
+
+		this.content = "";
+		this.noChildren = lexicalLine.endsWith("/");
 
 		for (let char of lexicalLine) {
-			if (!inContent) {
-				if (char === "[") {
-					inAttribute = true;
-					selector += char;
-				}
-				else if (char === "]") {
-					inAttribute = false;
-					selector += char;
-				}
-				else if (!inAttribute && char == " ") inContent = true;
-				else selector += char;
-			}
-			else {
-				content += char;
-			}
+			if (char === "[") inAttr = true;
+			else if (char === "]") inAttr = false;
+			else if (char === " " && !inAttr) inContent = true;
+
+			if (inContent) this.content += char;
+			else selector += char;
 		}
 
-		this.indent = indent;
-		this.noChildren = selector.endsWith("/");
+		this.content = this.content.trim();
+		this.id = (selector.match(idRegex) || [null])[0];
 
-		/** @type {[string, string][]} */
-		this.attributes = (selector.match(/\[.+\]/g) || []).map(attr => {
-			const [name, value] = attr.replace(/(^\[|\]$)/g, "").split("=");
+		selector = selector.replace(idRegex, "");
 
-			return [
-				name,
-				value ? value.replace(/(^["']|["']$)/g, "") : name
-			];
+		this.attributes = (selector.match(attrRegex) || []).map(attribute => {
+			const [name, ...valueItems] = attribute.replace(/[\[\]]/g, "").split("=");
+			const value = valueItems.join("=");
+
+			return [name, (value.match(/^["']/) === null ? "\"" : "") + value + (value.match(/["']$/) === null ? "\"" : "")];
 		});
 
-		let noAttributeSelector = selector + "";
-		
-		for (let attribute of (selector.match(/\[.+\]/g) || [])) {
-			noAttributeSelector = noAttributeSelector.replace(attribute, "");
-		}
+		selector = selector.replace(attrRegex, "");
 
-		this.tag = (selector.match(/^[\w$/\-]+/g) || ["div"])[0];
-		this.classes = (noAttributeSelector.match(/\.[\w$/\-]+/g) || []).map(c => c.slice(1));
-		this.id = (selector.match(/#[\w$/\-]+/g) || [""])[0].replace("#", "");
-		this.content = content || null;
+		this.tag = (selector.match(tagRegex) || ["div"])[0];
+
+		selector = selector.replace(tagRegex, "");
+
+		this.classes = (selector.match(classRegex) || []).map(className => {
+			return className.replace(/^\./g, "");
+		});
 	}
 }
 
 /**
- * @param {string} source 
- * @returns {string}
+ * @param {string} source
  */
 function compile(source) {
-	const lines = source.split("\n");
+	let output = "";
+	let lineNumber = 1;
 
 	/** @type {[string, number, boolean][]} */
-	const openElements = [];
-	let output = "";
+	let closingTags = [];
 
-	for (let line of lines) {
-		if (line.trim().length == 0) continue;
+	for (let line of source.split("\n")) {
+		lineNumber++;
 
 		const lexicalLine = line.trim();
-		const indent = (line.match(/^\t+/g) || [""])[0].length;
+		const indent = (line.match(/^\t+/) || [""])[0].length;
 
-		if (lexicalLine.startsWith("//")) {
-			continue;
+		if (lexicalLine.startsWith("//") || lexicalLine.length === 0) continue;
+
+		while (closingTags.length > 0 && closingTags[closingTags.length - 1][1] >= indent) {
+			const [tag, indent, isTemplate] = closingTags.pop();
+			output += isTemplate ? `${"\t".repeat(indent)}<% end_${tag} %>\n` : `${"\t".repeat(indent)}</${tag}>\n`;
 		}
-		else if (lexicalLine.startsWith("%")) {
-			const content = lexicalLine.replace("%", "").trim();
+
+		if (lexicalLine.startsWith("%")) {
+			const content = lexicalLine.replace(/(^%|\/$)/g, "").trim();
 			output += `${"\t".repeat(indent)}<% ${content} %>\n`;
-			openElements.push([content.split(" ")[0], indent, true]);
+
+			if (!lexicalLine.endsWith("/")) closingTags.push([content, indent, true]);
 		}
 		else {
-			const element = new HTMLElement(lexicalLine, indent);
-
-			while (openElements.length > 0 && indent <= openElements[openElements.length - 1][1]) {
-				const [tag, indent, isCMS] = openElements.pop();
-				output += isCMS ? `${"\t".repeat(indent)}<% end_${tag} %>\n` : `${"\t".repeat(indent)}</${tag}>\n`;
-			}
-
-			output += `${"\t".repeat(indent)}<${element.tag}${element.classes.length > 0 ? ` class="${element.classes.join(" ")}"` : ""}${element.id ? ` id="${element.id}"` : ""}${element.attributes.length > 0 ? " " + element.attributes.map(attr => `${attr[0]}="${attr[1]}"`).join(" ") : ""}${element.noChildren ? "/" : ""}>\n`;
+			const element = new HTMLElement(lexicalLine);
 
 			if (!element.noChildren) {
-				output += element.content ? `${"\t".repeat(indent + 1)}${element.content}\n` : "";
-				openElements.push([element.tag, indent, false]);
+				closingTags.push([element.tag, indent, false]);
 			}
+
+			output += `${"\t".repeat(indent)}<${element.tag}${element.id ? ` id="${element.id}"` : ""}${element.classes.length > 0 ? ` class="${element.classes.join(" ")}"` : ""}${element.attributes.length > 0 ? " " + element.attributes.map(attr => `${attr[0]}=${attr[1]}`).join(" ") : ""}>${element.content.length > 0 ? `\n${"\t".repeat(indent + 1)}${element.content}` : ""}\n`;
 		}
 	}
 
-	for (let i = openElements.length - 1; i >= 0; i--) {
-		const [tag, indent, isCMS] = openElements[i];
-		output += isCMS ? `${"\t".repeat(indent)}<% end_${tag} %>\n` : `${"\t".repeat(indent)}</${tag}>\n`;
+	for (let c = closingTags.length - 1; c >= 0; c--) {
+		const [tag, indent] = closingTags[c];
+		output += `${"\t".repeat(indent)}</${tag}>\n`;
 	}
+
 
 	return output;
 }

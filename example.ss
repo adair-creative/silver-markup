@@ -1,7 +1,7 @@
 <h1>
 	This is a carousel!
 </h1>
-<section id="carousel">
+<section id="#carousel">
 	<div class="track">
 		<% loop Content.Slides %>
 			<div class="slide">
@@ -11,12 +11,12 @@
 					$Title
 				</h3>
 			</div>
-		<% end_loop %>
+		<% end_loop Content.Slides %>
 	</div>
-	<button class="prev">
+	<button class="prev arrow">
 		👈
 	</button>
-	<button class="next">
+	<button class="next arrow">
 		👉
 	</button>
 </section>
